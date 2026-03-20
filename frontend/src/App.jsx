@@ -14,26 +14,35 @@ const defaultForm = {
   auto_detect_problem: false,
 };
 
+function getSummaryLine(text) {
+  if (!text) return "Submit an attempt to see personalized coaching.";
+  const firstSentence = text.split(".")[0]?.trim();
+  return firstSentence ? `${firstSentence}.` : text;
+}
+
 function StatusCard({ latest }) {
   if (!latest) {
     return (
-      <section className="card">
-        <h2>Latest Feedback</h2>
+      <section className="card latest-card">
+        <h2>Latest Result</h2>
         <p>Submit an attempt to see personalized coaching.</p>
       </section>
     );
   }
 
   return (
-    <section className="card">
-      <h2>Latest Feedback</h2>
-      <p>
+    <section className="card latest-card">
+      <h2>Latest Result</h2>
+      <div className="result-meta">
         <span className={`badge ${latest.mistake_type}`}>{latest.mistake_type}</span>
         <span className="confidence-badge">{latest.confidence || "medium"}</span>
-      </p>
-      <p>{latest.generated_feedback}</p>
+      </div>
+      <p className="summary-line">{getSummaryLine(latest.generated_feedback)}</p>
+      <div className="callout">
+        <p className="muted">Next Recommendation</p>
+        <p>{latest.recommendation_notes}</p>
+      </div>
       <p className="note">Pattern: {latest.repeated_pattern_notes}</p>
-      <p className="note">Recommendation: {latest.recommendation_notes}</p>
     </section>
   );
 }
@@ -182,7 +191,7 @@ export default function App() {
       </div>
 
       <div className="grid-2">
-        <DashboardPanel dashboard={dashboard} />
+        <DashboardPanel dashboard={dashboard} attempts={attempts} />
         <HistoryList attempts={attempts} />
       </div>
 
