@@ -1,3 +1,7 @@
+function MistakeBadge({ type }) {
+  return <span className={`badge ${type}`}>{type}</span>;
+}
+
 export default function HistoryList({ attempts }) {
   return (
     <section className="card">
@@ -10,9 +14,11 @@ export default function HistoryList({ attempts }) {
             <li key={attempt.id} className="history-item">
               <div className="history-top">
                 <strong>{attempt.problem_name}</strong>
-                <span className={`badge ${attempt.mistake_type}`}>{attempt.mistake_type}</span>
+                <MistakeBadge type={attempt.mistake_type} />
               </div>
-              <p className="muted">{attempt.preferred_language}</p>
+              <p className="muted">
+                {attempt.preferred_language} • {new Date(attempt.created_at).toLocaleString()}
+              </p>
               <p>{attempt.generated_feedback}</p>
               <p className="note">Pattern: {attempt.repeated_pattern_notes}</p>
               <p className="note">Recommendation: {attempt.recommendation_notes}</p>

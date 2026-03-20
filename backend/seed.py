@@ -1,7 +1,11 @@
+from typing import Set
+
 from sqlalchemy.orm import Session
 
 from analysis import generate_feedback
 from models import Attempt
+
+DEMO_STUDENTS: Set[str] = {"Aarav", "Maya"}
 
 
 def seed_demo_data(db: Session):
@@ -34,28 +38,33 @@ def seed_demo_data(db: Session):
             "student_name": "Maya",
             "preferred_language": "Java",
             "problem_name": "Fibonacci Recursion",
-            "code_submission": "int fib(int n){ return fib(n-1)+fib(n-2); }",
+            "code_submission": "class Solution { int fib(int n){ return fib(n-1)+fib(n-2); } }",
             "mistake_type": "wrong_logic",
         },
         {
             "student_name": "Maya",
             "preferred_language": "Java",
             "problem_name": "Fibonacci Recursion",
-            "code_submission": "int fib(int n){ if(n==0)return 0; return fib(n-1)+fib(n-2); }",
+            "code_submission": "class Solution { int fib(int n){ if(n==0)return 0; return fib(n-1)+fib(n-2); } }",
             "mistake_type": "wrong_logic",
         },
         {
             "student_name": "Maya",
             "preferred_language": "Java",
             "problem_name": "Valid Parentheses",
-            "code_submission": "public boolean isValid(String s){ return true; }",
+            "code_submission": "class Solution { boolean isValid(String s){ return true; } }",
             "mistake_type": "needs_test_validation",
         },
     ]
 
     inserted = 0
     for row in rows:
-        history = db.query(Attempt).filter(Attempt.student_name == row["student_name"]).all()
+        history = (
+            db.query(Attempt)
+            .filter(Attempt.student_name == row["student_name"])
+            .order_by(Attempt.created_at.asc())
+            .all()
+        )
         history_mistakes = [h.mistake_type for h in history]
         history_topics = [h.problem_name for h in history]
 

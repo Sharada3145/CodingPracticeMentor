@@ -1,4 +1,4 @@
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI
@@ -7,14 +7,15 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from analysis import classify_submission, detect_problem_from_code, generate_feedback
+from analysis import classify_submission, compute_topic_strengths, detect_problem_from_code, generate_feedback
 from database import Base, engine, get_db
+from evaluator import get_supported_problems
 from models import Attempt
-from seed import seed_demo_data
+from seed import DEMO_STUDENTS, seed_demo_data
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="AI Coding Practice Mentor API", version="1.0.0")
+app = FastAPI(title="AI Coding Practice Mentor API", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,14 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PROBLEMS = [
-    "Two Sum",
-    "Binary Search",
-    "Reverse String",
-    "Fibonacci Recursion",
-    "Valid Parentheses",
-    "General Practice",
-]
+PROBLEMS = get_supported_problems() + ["General Practice"]
 
 
 class SubmitRequest(BaseModel):
@@ -75,6 +69,19 @@ def list_students(db: Session = Depends(get_db)):
     return {"students": students}
 
 
+@app.get("/students/fresh")
+def list_fresh_students(db: Session = Depends(get_db)):
+    students = [
+        row[0]
+        for row in db.query(Attempt.student_name)
+        .distinct()
+        .filter(~Attempt.student_name.in_(DEMO_STUDENTS))
+        .order_by(func.lower(Attempt.student_name).asc())
+        .all()
+    ]
+    return {"students": students}
+
+
 @app.post("/submit", response_model=SubmitResponse)
 def submit_attempt(payload: SubmitRequest, db: Session = Depends(get_db)):
     student_name = payload.student_name.strip()
@@ -83,6 +90,16 @@ def submit_attempt(payload: SubmitRequest, db: Session = Depends(get_db)):
 
     if payload.auto_detect_problem or not problem_name:
         problem_name = detect_problem_from_code(payload.code_submission)
+    else:
+        # If user-selected problem and code intent clearly mismatch to another
+        # supported problem, prefer inferred problem to avoid false negatives.
+        inferred_problem = detect_problem_from_code(payload.code_submission)
+        if (
+            inferred_problem in get_supported_problems()
+            and problem_name in get_supported_problems()
+            and inferred_problem != problem_name
+        ):
+            problem_name = inferred_problem
 
     mistake_type = classify_submission(payload.code_submission, preferred_language, problem_name)
 
@@ -168,11 +185,11 @@ def get_dashboard(user: str, db: Session = Depends(get_db)):
     if not records:
         return {
             "student": user,
-            "preferred_language": "-",
+            "preferred_language": "N/A",
             "total_attempts": 0,
             "repeated_mistakes": [],
-            "strongest_topic": "-",
-            "weakest_topic": "-",
+            "strongest_topic": "N/A",
+            "weakest_topic": "N/A",
             "next_recommendation": "Submit an attempt to get personalized coaching.",
             "last_feedback": "No attempts yet.",
         }
@@ -187,19 +204,7 @@ def get_dashboard(user: str, db: Session = Depends(get_db)):
         if count >= 2
     ]
 
-    topic_stats = defaultdict(lambda: {"correct": 0, "total": 0})
-    for r in records:
-        topic_stats[r.problem_name]["total"] += 1
-        if r.mistake_type == "correct_solution":
-            topic_stats[r.problem_name]["correct"] += 1
-
-    scored = []
-    for topic, stats in topic_stats.items():
-        ratio = stats["correct"] / stats["total"] if stats["total"] else 0
-        scored.append((topic, ratio, stats["total"]))
-
-    strongest_topic = sorted(scored, key=lambda x: (-x[1], -x[2], x[0]))[0][0]
-    weakest_topic = sorted(scored, key=lambda x: (x[1], -x[2], x[0]))[0][0]
+    strongest_topic, weakest_topic = compute_topic_strengths(records)
     latest = records[-1]
 
     return {

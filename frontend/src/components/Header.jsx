@@ -1,6 +1,6 @@
 export default function Header() {
   return (
-    <header className="hero">
+    <header className="hero card">
       <p className="eyebrow">Hindsight Hackathon MVP</p>
       <h1>AI Coding Practice Mentor</h1>
       <p className="subtext">

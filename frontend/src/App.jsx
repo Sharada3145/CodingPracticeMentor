@@ -1,31 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DashboardPanel from "./components/DashboardPanel";
 import Header from "./components/Header";
 import HistoryList from "./components/HistoryList";
 import SubmissionForm from "./components/SubmissionForm";
 
-const BASE_URL = "https://codingpracticementor-2.onrender.com";
-
-async function apiRequest(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || `Request failed (${res.status})`);
-  }
-
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return res.json();
-  }
-  return null;
-}
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 
 const defaultForm = {
   student_name: "",
@@ -66,7 +45,10 @@ export default function App() {
   const [attempts, setAttempts] = useState([]);
   const [latest, setLatest] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const selectedStudent = useMemo(() => form.student_name.trim(), [form.student_name]);
 
   useEffect(() => {
     fetchProblems();
@@ -74,110 +56,97 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const student = form.student_name.trim();
-    if (!student) {
-      setDashboard(null);
-      setAttempts([]);
-      return;
+    if (selectedStudent) {
+      refreshStudentData(selectedStudent);
     }
-    refreshStudentData(student);
-  }, [form.student_name]);
+  }, [selectedStudent]);
 
   async function fetchProblems() {
-    try {
-      const data = await apiRequest("/problems");
-      setProblems(data?.problems || []);
-      setForm((prev) => ({ ...prev, problem_name: data?.problems?.[0] || "General Practice" }));
-    } catch (err) {
-      console.error("Failed to fetch problems:", err);
-      setMessage("Could not load problems from server.");
-    }
+    const res = await fetch(`${API_BASE}/problems`);
+    const data = await res.json();
+    setProblems(data.problems || []);
+    setForm((prev) => ({ ...prev, problem_name: data.problems?.[0] || "General Practice" }));
   }
 
   async function fetchStudents() {
-    try {
-      const data = await apiRequest("/students");
-      setStudents(data?.students || []);
-    } catch (err) {
-      console.error("Failed to fetch students:", err);
-      setMessage("Could not load student list.");
-    }
+    const res = await fetch(`${API_BASE}/students`);
+    const data = await res.json();
+    setStudents(data.students || []);
   }
 
   async function refreshStudentData(student) {
+    setLoading(true);
     try {
-      const [dashboardData, history] = await Promise.all([
-        apiRequest(`/dashboard/${encodeURIComponent(student)}`),
-        apiRequest(`/history/${encodeURIComponent(student)}`),
+      const [dashRes, historyRes] = await Promise.all([
+        fetch(`${API_BASE}/dashboard/${encodeURIComponent(student)}`),
+        fetch(`${API_BASE}/history/${encodeURIComponent(student)}`),
       ]);
-      setDashboard(dashboardData || null);
-      setAttempts(history?.attempts || []);
-      setLatest(history?.attempts?.[0] || null);
-    } catch (err) {
-      console.error("Failed to refresh student data:", err);
-      setMessage("Could not load dashboard/history for selected student.");
+      const dash = await dashRes.json();
+      const hist = await historyRes.json();
+      setDashboard(dash);
+      setAttempts(hist.attempts || []);
+      setLatest(hist.attempts?.[0] || null);
+    } finally {
+      setLoading(false);
     }
   }
 
-  function onChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  function onToggleAutoDetect() {
+  function handleToggleAutoDetect() {
     setForm((prev) => ({ ...prev, auto_detect_problem: !prev.auto_detect_problem }));
   }
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
     setSubmitting(true);
-    setMessage("");
     try {
-      const payload = { ...form, student_name: form.student_name.trim() };
-      const data = await apiRequest("/submit", {
+      const payload = {
+        ...form,
+        student_name: form.student_name.trim(),
+      };
+      const res = await fetch(`${API_BASE}/submit`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const data = await res.json();
       setLatest(data);
+      setToast("Attempt stored and coaching updated.");
       await fetchStudents();
-      await refreshStudentData(payload.student_name);
-      setMessage("Submission saved and dashboard updated.");
+      if (payload.student_name) {
+        await refreshStudentData(payload.student_name);
+      }
     } catch (err) {
-      console.error("Submit failed:", err);
-      setMessage(`Submit failed: ${err.message}`);
+      setToast("Submission failed. Confirm backend is running.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function seed() {
-    try {
-      await apiRequest("/seed", { method: "POST" });
-      await fetchStudents();
-      setMessage("Demo data seeded.");
-    } catch (err) {
-      console.error("Seed failed:", err);
-      setMessage("Seed failed. Check backend availability.");
-    }
+  async function handleSeed() {
+    await fetch(`${API_BASE}/seed`, { method: "POST" });
+    await fetchStudents();
+    setToast("Demo data seeded.");
   }
 
-  async function reset() {
-    try {
-      await apiRequest("/reset", { method: "POST" });
-      setDashboard(null);
-      setAttempts([]);
-      setLatest(null);
-      setForm(defaultForm);
-      await fetchStudents();
-      setMessage("Demo state reset.");
-    } catch (err) {
-      console.error("Reset failed:", err);
-      setMessage("Reset failed. Check backend availability.");
-    }
+  async function handleReset() {
+    await fetch(`${API_BASE}/reset`, { method: "POST" });
+    setDashboard(null);
+    setAttempts([]);
+    setLatest(null);
+    setForm(defaultForm);
+    await fetchStudents();
+    setToast("Demo state reset.");
   }
 
-  async function loadStudent(name) {
+  async function loadDemoStudent(name) {
     setForm((prev) => ({ ...prev, student_name: name }));
     await refreshStudentData(name);
+    setToast(`Loaded demo student ${name}.`);
   }
 
   return (
@@ -187,24 +156,25 @@ export default function App() {
       <section className="card controls">
         <h2>Demo Controls</h2>
         <div className="control-row">
-          <button onClick={seed}>Seed Demo Data</button>
-          <button onClick={() => loadStudent("Aarav")}>Load Aarav</button>
-          <button onClick={() => loadStudent("Maya")}>Load Maya</button>
-          <button className="danger" onClick={reset}>
+          <button onClick={handleSeed}>Seed Demo Data</button>
+          <button onClick={() => loadDemoStudent("Aarav")}>Load Aarav</button>
+          <button onClick={() => loadDemoStudent("Maya")}>Load Maya</button>
+          <button className="danger" onClick={handleReset}>
             Reset Demo State
           </button>
         </div>
         <p className="muted">Students in memory: {students.join(", ") || "none"}</p>
-        {message ? <p className="note">{message}</p> : null}
       </section>
+
+      {toast && <p className="toast">{toast}</p>}
 
       <div className="grid-2">
         <SubmissionForm
           form={form}
           problems={problems}
-          onChange={onChange}
-          onToggleAutoDetect={onToggleAutoDetect}
-          onSubmit={onSubmit}
+          onChange={handleChange}
+          onToggleAutoDetect={handleToggleAutoDetect}
+          onSubmit={handleSubmit}
           submitting={submitting}
         />
         <StatusCard latest={latest} />
@@ -214,6 +184,8 @@ export default function App() {
         <DashboardPanel dashboard={dashboard} />
         <HistoryList attempts={attempts} />
       </div>
+
+      {loading && <p className="muted">Refreshing student memory...</p>}
     </main>
   );
 }

@@ -1,3 +1,7 @@
+function MistakePill({ type }) {
+  return <span className={`badge ${type}`}>{type}</span>;
+}
+
 export default function DashboardPanel({ dashboard }) {
   if (!dashboard) {
     return (
@@ -29,20 +33,23 @@ export default function DashboardPanel({ dashboard }) {
           <strong>{dashboard.weakest_topic}</strong>
         </div>
       </div>
+
       <div className="dashboard-section">
         <p className="muted">Repeated Mistakes</p>
         {dashboard.repeated_mistakes?.length ? (
           <div className="pill-row">
             {dashboard.repeated_mistakes.map((item) => (
-              <span key={item.mistake} className={`badge ${item.mistake}`}>
-                {item.mistake} x{item.count}
-              </span>
+              <div key={item.mistake} className="mistake-item">
+                <MistakePill type={item.mistake} />
+                <span>x{item.count}</span>
+              </div>
             ))}
           </div>
         ) : (
           <p>None detected yet.</p>
         )}
       </div>
+
       <div className="dashboard-section">
         <p className="muted">Next Recommendation</p>
         <p>{dashboard.next_recommendation}</p>

@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 const languages = ["Python", "Java", "JavaScript", "C++"];
 
 export default function SubmissionForm({
@@ -10,7 +8,7 @@ export default function SubmissionForm({
   onSubmit,
   submitting,
 }) {
-  const disabled = useMemo(() => !form.student_name || !form.code_submission, [form]);
+  const disabled = !form.student_name.trim() || !form.code_submission.trim();
 
   return (
     <section className="card">
