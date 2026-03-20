@@ -4,7 +4,28 @@ import Header from "./components/Header";
 import HistoryList from "./components/HistoryList";
 import SubmissionForm from "./components/SubmissionForm";
 
-const API_BASE = "https://codingpracticementor-2.onrender.com";
+const BASE_URL = "https://codingpracticementor-2.onrender.com";
+
+async function apiRequest(path, options = {}) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Request failed (${res.status})`);
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+  return null;
+}
 
 const defaultForm = {
   student_name: "",
@@ -63,27 +84,39 @@ export default function App() {
   }, [form.student_name]);
 
   async function fetchProblems() {
-    const res = await fetch(`${API_BASE}/problems`);
-    const data = await res.json();
-    setProblems(data.problems || []);
-    setForm((prev) => ({ ...prev, problem_name: data.problems?.[0] || "General Practice" }));
+    try {
+      const data = await apiRequest("/problems");
+      setProblems(data?.problems || []);
+      setForm((prev) => ({ ...prev, problem_name: data?.problems?.[0] || "General Practice" }));
+    } catch (err) {
+      console.error("Failed to fetch problems:", err);
+      setMessage("Could not load problems from server.");
+    }
   }
 
   async function fetchStudents() {
-    const res = await fetch(`${API_BASE}/students`);
-    const data = await res.json();
-    setStudents(data.students || []);
+    try {
+      const data = await apiRequest("/students");
+      setStudents(data?.students || []);
+    } catch (err) {
+      console.error("Failed to fetch students:", err);
+      setMessage("Could not load student list.");
+    }
   }
 
   async function refreshStudentData(student) {
-    const [dashRes, histRes] = await Promise.all([
-      fetch(`${API_BASE}/dashboard/${encodeURIComponent(student)}`),
-      fetch(`${API_BASE}/history/${encodeURIComponent(student)}`),
-    ]);
-    setDashboard(await dashRes.json());
-    const history = await histRes.json();
-    setAttempts(history.attempts || []);
-    setLatest(history.attempts?.[0] || null);
+    try {
+      const [dashboardData, history] = await Promise.all([
+        apiRequest(`/dashboard/${encodeURIComponent(student)}`),
+        apiRequest(`/history/${encodeURIComponent(student)}`),
+      ]);
+      setDashboard(dashboardData || null);
+      setAttempts(history?.attempts || []);
+      setLatest(history?.attempts?.[0] || null);
+    } catch (err) {
+      console.error("Failed to refresh student data:", err);
+      setMessage("Could not load dashboard/history for selected student.");
+    }
   }
 
   function onChange(e) {
@@ -100,23 +133,16 @@ export default function App() {
     setMessage("");
     try {
       const payload = { ...form, student_name: form.student_name.trim() };
-      const res = await fetch(`${API_BASE}/submit`, {
+      const data = await apiRequest("/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Submit failed with status ${res.status}`);
-      }
-
-      const data = await res.json();
       setLatest(data);
       await fetchStudents();
       await refreshStudentData(payload.student_name);
       setMessage("Submission saved and dashboard updated.");
     } catch (err) {
+      console.error("Submit failed:", err);
       setMessage(`Submit failed: ${err.message}`);
     } finally {
       setSubmitting(false);
@@ -124,19 +150,29 @@ export default function App() {
   }
 
   async function seed() {
-    await fetch(`${API_BASE}/seed`, { method: "POST" });
-    await fetchStudents();
-    setMessage("Demo data seeded.");
+    try {
+      await apiRequest("/seed", { method: "POST" });
+      await fetchStudents();
+      setMessage("Demo data seeded.");
+    } catch (err) {
+      console.error("Seed failed:", err);
+      setMessage("Seed failed. Check backend availability.");
+    }
   }
 
   async function reset() {
-    await fetch(`${API_BASE}/reset`, { method: "POST" });
-    setDashboard(null);
-    setAttempts([]);
-    setLatest(null);
-    setForm(defaultForm);
-    await fetchStudents();
-    setMessage("Demo state reset.");
+    try {
+      await apiRequest("/reset", { method: "POST" });
+      setDashboard(null);
+      setAttempts([]);
+      setLatest(null);
+      setForm(defaultForm);
+      await fetchStudents();
+      setMessage("Demo state reset.");
+    } catch (err) {
+      console.error("Reset failed:", err);
+      setMessage("Reset failed. Check backend availability.");
+    }
   }
 
   async function loadStudent(name) {
