@@ -4,7 +4,7 @@ import Header from "./components/Header";
 import HistoryList from "./components/HistoryList";
 import SubmissionForm from "./components/SubmissionForm";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://codingpracticementor-2.onrender.com";
 
 const defaultForm = {
   student_name: "",

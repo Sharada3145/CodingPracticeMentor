@@ -105,7 +105,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Backend runs at http://127.0.0.1:8000
+Backend runs at https://codingpracticementor-2.onrender.com
 
 ### 2. Frontend
 
