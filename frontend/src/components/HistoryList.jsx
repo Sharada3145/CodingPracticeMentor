@@ -1,5 +1,10 @@
-function MistakeBadge({ type }) {
-  return <span className={`badge ${type}`}>{type}</span>;
+function MistakeBadge({ type, confidence }) {
+  return (
+    <>
+      <span className={`badge ${type}`}>{type}</span>
+      <span className="confidence-badge">{confidence || "medium"}</span>
+    </>
+  );
 }
 
 export default function HistoryList({ attempts }) {
@@ -14,7 +19,7 @@ export default function HistoryList({ attempts }) {
             <li key={attempt.id} className="history-item">
               <div className="history-top">
                 <strong>{attempt.problem_name}</strong>
-                <MistakeBadge type={attempt.mistake_type} />
+                <MistakeBadge type={attempt.mistake_type} confidence={attempt.confidence} />
               </div>
               <p className="muted">
                 {attempt.preferred_language} • {new Date(attempt.created_at).toLocaleString()}

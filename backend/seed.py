@@ -84,6 +84,7 @@ def seed_demo_data(db: Session):
                 problem_name=row["problem_name"],
                 code_submission=row["code_submission"],
                 mistake_type=row["mistake_type"],
+                confidence=("low" if row["mistake_type"] == "needs_test_validation" else "medium"),
                 generated_feedback=feedback,
                 repeated_pattern_notes=repeated_note,
                 recommendation_notes=recommendation,

@@ -15,6 +15,7 @@ class Attempt(Base):
     problem_name: Mapped[str] = mapped_column(String(120), index=True)
     code_submission: Mapped[str] = mapped_column(Text)
     mistake_type: Mapped[str] = mapped_column(String(50), index=True)
+    confidence: Mapped[str] = mapped_column(String(20), default="medium", index=True)
     generated_feedback: Mapped[str] = mapped_column(Text)
     repeated_pattern_notes: Mapped[str] = mapped_column(Text)
     recommendation_notes: Mapped[str] = mapped_column(Text)

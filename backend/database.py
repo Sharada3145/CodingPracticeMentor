@@ -14,3 +14,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_schema_updates():
+    with engine.begin() as conn:
+        table_rows = conn.exec_driver_sql("PRAGMA table_info(attempts)").fetchall()
+        columns = {row[1] for row in table_rows}
+        if "confidence" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE attempts ADD COLUMN confidence VARCHAR(20) DEFAULT 'medium'"
+            )

@@ -7,13 +7,20 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from analysis import classify_submission, compute_topic_strengths, detect_problem_from_code, generate_feedback
-from database import Base, engine, get_db
+from analysis import (
+    classify_submission_with_confidence,
+    compute_topic_strengths,
+    detect_learning_trend,
+    detect_problem_from_code,
+    generate_feedback,
+)
+from database import Base, engine, ensure_schema_updates, get_db
 from evaluator import get_supported_problems
 from models import Attempt
 from seed import DEMO_STUDENTS, seed_demo_data
 
 Base.metadata.create_all(bind=engine)
+ensure_schema_updates()
 
 app = FastAPI(title="AI Coding Practice Mentor API", version="1.2.0")
 
@@ -42,6 +49,7 @@ class SubmitResponse(BaseModel):
     preferred_language: str
     problem_name: str
     mistake_type: str
+    confidence: str
     generated_feedback: str
     repeated_pattern_notes: str
     recommendation_notes: str
@@ -101,7 +109,9 @@ def submit_attempt(payload: SubmitRequest, db: Session = Depends(get_db)):
         ):
             problem_name = inferred_problem
 
-    mistake_type = classify_submission(payload.code_submission, preferred_language, problem_name)
+    mistake_type, confidence = classify_submission_with_confidence(
+        payload.code_submission, preferred_language, problem_name
+    )
 
     history = (
         db.query(Attempt)
@@ -127,6 +137,7 @@ def submit_attempt(payload: SubmitRequest, db: Session = Depends(get_db)):
         problem_name=problem_name,
         code_submission=payload.code_submission,
         mistake_type=mistake_type,
+        confidence=confidence,
         generated_feedback=generated_feedback,
         repeated_pattern_notes=repeated_pattern_notes,
         recommendation_notes=recommendation_notes,
@@ -141,6 +152,7 @@ def submit_attempt(payload: SubmitRequest, db: Session = Depends(get_db)):
         preferred_language=attempt.preferred_language,
         problem_name=attempt.problem_name,
         mistake_type=attempt.mistake_type,
+        confidence=attempt.confidence,
         generated_feedback=attempt.generated_feedback,
         repeated_pattern_notes=attempt.repeated_pattern_notes,
         recommendation_notes=attempt.recommendation_notes,
@@ -163,6 +175,7 @@ def get_history(user: str, db: Session = Depends(get_db)):
                 "preferred_language": r.preferred_language,
                 "problem_name": r.problem_name,
                 "mistake_type": r.mistake_type,
+                "confidence": r.confidence,
                 "generated_feedback": r.generated_feedback,
                 "repeated_pattern_notes": r.repeated_pattern_notes,
                 "recommendation_notes": r.recommendation_notes,
@@ -190,6 +203,7 @@ def get_dashboard(user: str, db: Session = Depends(get_db)):
             "repeated_mistakes": [],
             "strongest_topic": "N/A",
             "weakest_topic": "N/A",
+            "learning_trend": "insufficient_data",
             "next_recommendation": "Submit an attempt to get personalized coaching.",
             "last_feedback": "No attempts yet.",
         }
@@ -205,6 +219,7 @@ def get_dashboard(user: str, db: Session = Depends(get_db)):
     ]
 
     strongest_topic, weakest_topic = compute_topic_strengths(records)
+    learning_trend = detect_learning_trend(records)
     latest = records[-1]
 
     return {
@@ -214,6 +229,7 @@ def get_dashboard(user: str, db: Session = Depends(get_db)):
         "repeated_mistakes": repeated_mistakes,
         "strongest_topic": strongest_topic,
         "weakest_topic": weakest_topic,
+        "learning_trend": learning_trend,
         "next_recommendation": latest.recommendation_notes,
         "last_feedback": latest.generated_feedback,
     }

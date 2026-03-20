@@ -29,6 +29,7 @@ function StatusCard({ latest }) {
       <h2>Latest Feedback</h2>
       <p>
         <span className={`badge ${latest.mistake_type}`}>{latest.mistake_type}</span>
+        <span className="confidence-badge">{latest.confidence || "medium"}</span>
       </p>
       <p>{latest.generated_feedback}</p>
       <p className="note">Pattern: {latest.repeated_pattern_notes}</p>

@@ -2,6 +2,18 @@ function MistakePill({ type }) {
   return <span className={`badge ${type}`}>{type}</span>;
 }
 
+function TrendLabel({ trend }) {
+  const value = trend || "insufficient_data";
+  const textMap = {
+    improving: "improving",
+    stagnating: "stagnating",
+    declining: "declining",
+    insufficient_data: "insufficient data",
+  };
+
+  return <span className={`trend-badge ${value}`}>{textMap[value] || value}</span>;
+}
+
 export default function DashboardPanel({ dashboard }) {
   if (!dashboard) {
     return (
@@ -31,6 +43,10 @@ export default function DashboardPanel({ dashboard }) {
         <div>
           <p className="muted">Weakest Topic</p>
           <strong>{dashboard.weakest_topic}</strong>
+        </div>
+        <div>
+          <p className="muted">Learning Trend</p>
+          <TrendLabel trend={dashboard.learning_trend} />
         </div>
       </div>
 

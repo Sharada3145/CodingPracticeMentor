@@ -71,6 +71,9 @@ def detect_malformed_code(code: str, selected_language: str, problem_name: str) 
     if len(non_empty_lines) < 2 or len(stripped) < 15:
         return True, "too_short"
 
+    if re.search(r"^[ \t]*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*$", stripped, flags=re.MULTILINE):
+        return True, "incomplete_assignment"
+
     if _has_unbalanced_pairs(stripped):
         return True, "unbalanced_brackets"
 
@@ -79,11 +82,37 @@ def detect_malformed_code(code: str, selected_language: str, problem_name: str) 
         if selected == "python" and "def " not in lower:
             return True, "missing_python_function"
         if selected == "python":
+            control_starts = ("if ", "elif ", "else", "for ", "while ", "try", "except", "finally", "with ")
+
             # Catch a common syntax issue: missing ':' after function definition.
             for line in stripped.splitlines():
                 line_stripped = line.strip()
+                if not line_stripped or line_stripped.startswith("#"):
+                    continue
+
                 if line_stripped.startswith("def ") and not line_stripped.endswith(":"):
                     return True, "missing_colon_in_def"
+
+                if line_stripped.startswith(control_starts) and not line_stripped.endswith(":"):
+                    return True, "missing_colon_in_control_statement"
+
+            # Guard against common indentation problems in Python blocks.
+            lines = stripped.splitlines()
+            for index, line in enumerate(lines):
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+
+                if "\t" in line:
+                    return True, "invalid_indentation_tabs"
+
+                indent = len(line) - len(line.lstrip(" "))
+                if indent % 4 != 0:
+                    return True, "invalid_indentation_width"
+
+                if index > 0:
+                    prev = lines[index - 1].strip()
+                    if prev.endswith(":") and indent == 0:
+                        return True, "invalid_indentation_after_block"
         if selected == "java" and "class solution" not in lower:
             return True, "missing_solution_class"
 
@@ -142,15 +171,22 @@ def should_allow_judging(
 
 
 def classify_submission(code: str, selected_language: str, problem_name: str) -> str:
+    mistake_type, _ = classify_submission_with_confidence(code, selected_language, problem_name)
+    return mistake_type
+
+
+def classify_submission_with_confidence(code: str, selected_language: str, problem_name: str) -> Tuple[str, str]:
     inferred_language, lang_conf = infer_language_from_code(code)
     mismatch, mismatch_conf = detect_language_mismatch(selected_language, inferred_language, lang_conf)
 
     malformed, _ = detect_malformed_code(code, selected_language, problem_name)
     if malformed:
-        return "syntax_error"
+        return "syntax_error", "medium"
 
     if mismatch:
-        return "syntax_error" if mismatch_conf >= 0.65 else "needs_test_validation"
+        if mismatch_conf >= 0.65:
+            return "syntax_error", "medium"
+        return "needs_test_validation", "low"
 
     inferred_problem, inferred_problem_conf = infer_problem_from_code(code)
     selected_supported = is_supported_problem(problem_name)
@@ -158,7 +194,7 @@ def classify_submission(code: str, selected_language: str, problem_name: str) ->
     final_problem_conf = 0.9 if selected_supported else inferred_problem_conf
 
     if not is_supported_problem(final_problem):
-        return "needs_test_validation"
+        return "needs_test_validation", "low"
 
     allow, _ = should_allow_judging(
         selected_language=selected_language,
@@ -169,12 +205,16 @@ def classify_submission(code: str, selected_language: str, problem_name: str) ->
         code=code,
     )
     if not allow:
-        return "needs_test_validation"
+        return "needs_test_validation", "low"
 
     result = evaluate_supported_submission(final_problem, selected_language, code)
     if result.get("passed"):
-        return "correct_solution"
-    return result.get("failure_type") or "wrong_logic"
+        return "correct_solution", "high"
+
+    failure_type = result.get("failure_type") or "wrong_logic"
+    if failure_type == "needs_test_validation":
+        return failure_type, "low"
+    return failure_type, "medium"
 
 
 def _repeated_mistake_note(history_mistakes: List[str], current_mistake: str, topic: str, language: str) -> str:
@@ -195,14 +235,34 @@ def _recommendation_note(history_topics: List[str], history_mistakes: List[str],
     topic_counts = Counter(history_topics)
     mistake_counts = Counter([m for m in history_mistakes if m != "correct_solution"])
 
-    weakest_topic = topic_counts.most_common(1)[0][0] if topic_counts else None
-    repeated_mistake = mistake_counts.most_common(1)[0][0] if mistake_counts else None
+    target_topic = topic_counts.most_common(1)[0][0] if topic_counts else current_topic
+    if not target_topic or target_topic == "general":
+        target_topic = "array"
 
-    if repeated_mistake and weakest_topic:
-        return f"Next focus: {weakest_topic}. Practice specifically to reduce {repeated_mistake} mistakes."
-    if current_topic != "general":
-        return f"Next focus: two more {current_topic} tasks with explicit test cases before coding."
-    return "Next focus: one arrays task and one recursion task with test-first workflow."
+    repeated_mistake = mistake_counts.most_common(1)[0][0] if mistake_counts else None
+    repeated_count = mistake_counts.get(repeated_mistake, 0) if repeated_mistake else 0
+
+    focus_by_mistake = {
+        "syntax_error": "syntax basics like colons, indentation, and balanced brackets",
+        "off_by_one": "boundary checks and index movement",
+        "edge_case": "edge-case coverage for empty, single, duplicate, and extreme inputs",
+        "wrong_logic": "logic tracing, condition order, and early return conditions",
+        "inefficient_solution": "time complexity, hash-map usage, and avoiding nested loops",
+        "runtime_error": "null/empty guards and safe condition checks",
+        "needs_test_validation": "complete function structure and explicit expected-output tests",
+    }
+
+    if repeated_mistake in focus_by_mistake:
+        focus = focus_by_mistake[repeated_mistake]
+        problems_to_solve = 3 if repeated_count >= 3 else 2
+    else:
+        focus = "boundary checks and early return conditions"
+        problems_to_solve = 2
+
+    topic_label = target_topic[:-1] if target_topic.endswith("s") else target_topic
+    return (
+        f"Practice {problems_to_solve} {topic_label} problems focusing on {focus}."
+    )
 
 
 def generate_feedback(
@@ -239,8 +299,45 @@ def generate_feedback(
         ),
     }
 
+    mistake_explanations: Dict[str, str] = {
+        "syntax_error": (
+            "Explanation: Some required syntax is missing or invalid, such as a missing ':' in Python "
+            "or unmatched brackets."
+        ),
+        "off_by_one": (
+            "Explanation: The loop or pointer moves one step too far or stops one step too early, "
+            "which skips the correct index."
+        ),
+        "wrong_logic": (
+            "Explanation: The steps are valid Python/Java syntax, but the algorithm decision path is "
+            "not matching the problem rule."
+        ),
+        "edge_case": (
+            "Explanation: Main examples may pass, but special inputs like empty lists, one element, "
+            "duplicates, or extremes are not handled yet."
+        ),
+    }
+
+    quick_fix_suggestions: Dict[str, str] = {
+        "off_by_one": (
+            "Quick fix: Use `for i in range(len(nums))` or `while left <= right`, and update indexes with `+1`/`-1` exactly once per step."
+        ),
+        "syntax_error": (
+            "Quick fix: Add missing `:` after block headers, close brackets/parentheses, and ensure assignments have a value (for example `x = 0`)."
+        ),
+        "wrong_logic": (
+            "Quick fix: Follow the problem hint step-by-step and trace one small example to verify each condition and return path."
+        ),
+    }
+
+    explanation = mistake_explanations.get(mistake_type, "")
+    explanation_part = f" {explanation}" if explanation else ""
+    quick_fix = quick_fix_suggestions.get(mistake_type, "")
+    quick_fix_part = f" {quick_fix}" if quick_fix else ""
+
     feedback = (
-        f"{base_feedback[mistake_type]} {student_name}, current track: {topic} in {normalized_language}. "
+        f"{base_feedback[mistake_type]}{explanation_part} "
+        f"{student_name}, current track: {topic} in {normalized_language}.{quick_fix_part} "
         f"{get_problem_hint(problem_name)}"
     )
 
@@ -287,3 +384,28 @@ def compute_topic_strengths(records: List[object]) -> Tuple[str, str]:
         weakest = candidates[0] if candidates else weakest
 
     return strongest, weakest
+
+
+def detect_learning_trend(records: List[object]) -> str:
+    if len(records) < 4:
+        return "insufficient_data"
+
+    last_three = records[-3:]
+    previous = records[:-3]
+
+    last_three_mistakes = [r.mistake_type for r in last_three if r.mistake_type != "correct_solution"]
+    previous_mistakes = [r.mistake_type for r in previous if r.mistake_type != "correct_solution"]
+
+    # Same mistake repeated across the recent 3 attempts indicates stagnation.
+    if len(last_three_mistakes) == 3 and len(set(last_three_mistakes)) == 1:
+        return "stagnating"
+
+    recent_error_count = len(last_three_mistakes)
+    previous_error_rate = len(previous_mistakes) / len(previous) if previous else 0.0
+    previous_baseline_for_three = previous_error_rate * 3
+
+    if recent_error_count < previous_baseline_for_three:
+        return "improving"
+    if recent_error_count > previous_baseline_for_three:
+        return "declining"
+    return "stagnating"

@@ -215,6 +215,48 @@ textarea {
   background: #dbeafe;
 }
 
+.confidence-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  text-transform: lowercase;
+  color: #1f2937;
+  background: #e5e7eb;
+  border: 1px solid #d1d5db;
+}
+
+.trend-badge {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  text-transform: lowercase;
+  border: 1px solid transparent;
+}
+
+.trend-badge.improving {
+  color: var(--green);
+  background: #dcfce7;
+}
+
+.trend-badge.stagnating {
+  color: var(--amber);
+  background: #ffedd5;
+}
+
+.trend-badge.declining {
+  color: var(--red);
+  background: #fee2e2;
+}
+
+.trend-badge.insufficient_data {
+  color: #374151;
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
 .history-list {
   list-style: none;
   padding: 0;
